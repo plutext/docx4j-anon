@@ -4,6 +4,7 @@ import java.util.Map.Entry;
 
 import org.apache.commons.codec.binary.Base64;
 import org.docx4j.TraversalUtil;
+import org.docx4j.openpackaging.exceptions.Docx4JException;
 import org.docx4j.openpackaging.exceptions.InvalidFormatException;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.JaxbXmlPart;
@@ -67,11 +68,6 @@ public class Anonymize {
     }
 	
 	/*
-	 * docProps/app.xml (Extended Properties) : leave as is
-	 * 
-	 * docProps/core.xml: remove company info
-	 * 
-	 * 
 	 * TODO: everything else, eg OLE embedded objects, WordArt, SmartArt (?)...
 	 * VML
 	 * EMF, WMF
@@ -82,8 +78,12 @@ public class Anonymize {
 	 * List of handled parts .. anything else ..
 	 * 
 	 */
-	public void go() throws InvalidFormatException {
-
+	public void go() throws Docx4JException {
+		
+		handleMetadata();
+		
+//		detectUnsafeParts();
+		
 		/* content stories:
 		 * 
 		 * - MDP
@@ -92,10 +92,45 @@ public class Anonymize {
 		 * - Comments
 		 * 
 		 * replace with latin text */
-		applyLatinCallbackToParts();
+		applyScrambleCallbackToParts();
 		
 		// Next, images
 		handleImages();
+		
+//		detectUnsafeContent();
+		
+	}
+
+	/**
+	 * @throws Docx4JException
+	 */
+	protected void handleMetadata() throws Docx4JException {
+		
+		// docProps/app.xml (Extended Properties) 
+		if (pkg.getDocPropsExtendedPart()!=null
+				&& pkg.getDocPropsExtendedPart().getContents()!=null) {
+			
+			pkg.getDocPropsExtendedPart().getContents().setCompany(null);
+			pkg.getDocPropsExtendedPart().getContents().setManager(null);
+			pkg.getDocPropsExtendedPart().getContents().setHeadingPairs(null);
+		}
+		
+		if (pkg.getDocPropsCorePart()!=null
+				&& pkg.getDocPropsCorePart().getContents()!=null) {
+			
+			pkg.getDocPropsCorePart().getContents().setCategory(null);
+			pkg.getDocPropsCorePart().getContents().setCreator(null);
+			pkg.getDocPropsCorePart().getContents().setDescription(null);
+			pkg.getDocPropsCorePart().getContents().setIdentifier(null);
+			pkg.getDocPropsCorePart().getContents().setKeywords(null);
+			pkg.getDocPropsCorePart().getContents().setSubject(null);
+			pkg.getDocPropsCorePart().getContents().setTitle(null);
+		}
+
+		if (pkg.getDocPropsCustomPart()!=null) {
+			// Remove this
+			pkg.getRelationshipsPart().removePart(pkg.getDocPropsCustomPart().getPartName());
+		}
 	}
 	
     /**
@@ -128,7 +163,7 @@ public class Anonymize {
 		}
     }	
 	
-    private void applyLatinCallbackToParts() 
+    private void applyScrambleCallbackToParts() 
     		throws InvalidFormatException {
 
 		latinizer = new ScrambleText(pkg);
