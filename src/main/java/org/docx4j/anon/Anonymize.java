@@ -1,9 +1,13 @@
 package org.docx4j.anon;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map.Entry;
+import java.util.Set;
 
 import org.apache.commons.codec.binary.Base64;
 import org.docx4j.TraversalUtil;
+import org.docx4j.XmlUtils;
 import org.docx4j.openpackaging.exceptions.Docx4JException;
 import org.docx4j.openpackaging.exceptions.InvalidFormatException;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
@@ -18,6 +22,10 @@ import org.docx4j.openpackaging.parts.WordprocessingML.ImageGifPart;
 import org.docx4j.openpackaging.parts.WordprocessingML.ImageJpegPart;
 import org.docx4j.openpackaging.parts.WordprocessingML.ImagePngPart;
 import org.docx4j.openpackaging.parts.WordprocessingML.ImageTiffPart;
+import org.docx4j.relationships.Relationship;
+import org.docx4j.wml.CTLanguage;
+import org.docx4j.wml.RPr;
+import org.docx4j.wml.Styles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,12 +38,17 @@ public class Anonymize {
 	public Anonymize(WordprocessingMLPackage wordMLPackage) {
 		
 		this.pkg = wordMLPackage;
+		
+		result = new AnonymizeResult();
 	}
 	
 	private WordprocessingMLPackage pkg;
 	
 	ScrambleText latinizer = null;   
+	DmlVmlAnalyzer dmlVmlAnalyzer = null;
 	
+	AnonymizeResult result;
+		
 	// We'll replace images with 2x2 pixels	
     private static byte[] PNG_IMAGE_DATA;
     private static byte[] GIF_IMAGE_DATA;
@@ -66,23 +79,50 @@ public class Anonymize {
         BMP_IMAGE_DATA = Base64.decodeBase64("Qk1GAAAAAAAAADYAAAAoAAAAAgAAAAIAAAABABgAAAAAAAAAAAATCwAAEwsAAAAAAAAAAAAABv8AAPz///8AAP//AAMD/w==");
         TIF_IMAGE_DATA = Base64.decodeBase64("");
     }
+
 	
+    
 	/*
-	 * TODO: everything else, eg OLE embedded objects, WordArt, SmartArt (?)...
-	 * VML
-	 * EMF, WMF
-	 * Detect if present?
 	 * 
-	 * in which case, return false;  they can still get the docx...
-	 * 
-	 * List of handled parts .. anything else ..
+	 * TODO: Info leakage via external parts eg hyperlinks
 	 * 
 	 */
-	public void go() throws Docx4JException {
+	public AnonymizeResult go() throws Docx4JException {
+		
+		// Identify themeFontLang
+		// TODO: sanity check this against the actual document contents!
+		if (pkg.getMainDocumentPart().getDocumentSettingsPart()!=null
+				&& pkg.getMainDocumentPart().getDocumentSettingsPart().getContents()!=null) {
+			
+				result.themeFontLang = pkg.getMainDocumentPart().getDocumentSettingsPart().getContents().getThemeFontLang();
+		}
+		
+		if (result.themeFontLang==null) {
+			// try defaultRPr
+			RPr defaultRPr = null;
+			if (pkg.getMainDocumentPart().getStyleDefinitionsPart()!=null
+					&& pkg.getMainDocumentPart().getStyleDefinitionsPart().getContents()!=null) {
+				
+				Styles styles = pkg.getMainDocumentPart().getStyleDefinitionsPart().getContents();
+				
+				if (styles.getDocDefaults()!=null) {
+					
+					if (styles.getDocDefaults().getRPrDefault()!=null
+							&& styles.getDocDefaults().getRPrDefault().getRPr()!=null) {
+						
+						result.themeFontLang = styles.getDocDefaults().getRPrDefault().getRPr().getLang(); 
+					}
+				}
+				
+			}
+		}
+		
 		
 		handleMetadata();
 		
-//		detectUnsafeParts();
+		result.unsafeParts = PartsAnalyzer.identifyUnsafeParts(pkg.getParts().getParts().entrySet());
+
+		detectDmlVmlContent();  // doing this before scramble lets us analyze field types
 		
 		/* content stories:
 		 * 
@@ -97,7 +137,8 @@ public class Anonymize {
 		// Next, images
 		handleImages();
 		
-//		detectUnsafeContent();
+		
+		return result;
 		
 	}
 
@@ -105,7 +146,7 @@ public class Anonymize {
 	 * @throws Docx4JException
 	 */
 	protected void handleMetadata() throws Docx4JException {
-		
+				
 		// docProps/app.xml (Extended Properties) 
 		if (pkg.getDocPropsExtendedPart()!=null
 				&& pkg.getDocPropsExtendedPart().getContents()!=null) {
@@ -131,6 +172,10 @@ public class Anonymize {
 			// Remove this
 			pkg.getRelationshipsPart().removePart(pkg.getDocPropsCustomPart().getPartName());
 		}
+		
+		// /docProps/thumbnail.emf, always delete this!
+		pkg.getRelationshipsPart().removePart(new PartName("/docProps/thumbnail.emf"));
+
 	}
 	
     /**
@@ -150,10 +195,8 @@ public class Anonymize {
 					|| p instanceof ImageGifPart
 					|| p instanceof ImageJpegPart
 					|| p instanceof ImageBmpPart
-					|| p instanceof ImageTiffPart
-					
-					// TODO: eps
-					
+					|| p instanceof ImageTiffPart	
+					// Others treated as unsafe
 					) {
 				
 				((BinaryPart)p).setBinaryData(PNG_IMAGE_DATA);
@@ -162,6 +205,71 @@ public class Anonymize {
 			
 		}
     }	
+    
+    private void detectDmlVmlContent() 
+    		throws InvalidFormatException {
+
+    	dmlVmlAnalyzer = new DmlVmlAnalyzer();
+    	
+	    // Apply map to MDP                
+    	detectDmlVml( pkg.getMainDocumentPart() );        							
+        
+	    // Apply map to headers/footers
+		for (Entry<PartName, Part> entry : pkg.getParts().getParts().entrySet()) {
+
+			Part p = entry.getValue(); 
+
+			if (p instanceof HeaderPart) {
+				detectDmlVml( (HeaderPart)p );        							
+			}
+
+			if (p instanceof FooterPart) {
+				detectDmlVml( (FooterPart)p );        							
+			}
+			
+		}
+        
+	    // endnotes/footnotes
+		if (pkg.getMainDocumentPart().getFootnotesPart()!=null) {
+			detectDmlVml( pkg.getMainDocumentPart().getFootnotesPart() );
+		}
+		if (pkg.getMainDocumentPart().getEndNotesPart()!=null) {
+			detectDmlVml( pkg.getMainDocumentPart().getEndNotesPart() );
+		}
+		
+		
+        // Comments
+		if (pkg.getMainDocumentPart().getCommentsPart()!=null) {
+			detectDmlVml( pkg.getMainDocumentPart().getCommentsPart() );
+		}
+   		
+		return;
+
+    }  	
+    
+	public void detectDmlVml(JaxbXmlPart p) {
+		
+		log.info("\n\n Inspecting " + p.getPartName().getName());
+		
+		dmlVmlAnalyzer.reinit();
+		dmlVmlAnalyzer.setPart(p);
+		new TraversalUtil(p.getJaxbElement(), dmlVmlAnalyzer);
+		
+		result.unsafeObjectsByPart.put(p, dmlVmlAnalyzer.unsafeObjects);
+		if (dmlVmlAnalyzer.unsafeObjects.size()>0){
+			result.anyUnsafeObjects = true;
+		}
+		result.inventoryObjectsByPart.put(p, dmlVmlAnalyzer.inventoryObjects);
+		
+		if (!result.containsVML) {
+			result.containsVML = dmlVmlAnalyzer.containsVML;
+		}
+		
+		result.fieldsPresent = this.dmlVmlAnalyzer.fieldsPresent;
+		
+	}
+    
+    
 	
     private void applyScrambleCallbackToParts() 
     		throws InvalidFormatException {
@@ -170,7 +278,7 @@ public class Anonymize {
     	
     	
 	    // Apply map to MDP                
-		toLatin( pkg.getMainDocumentPart() );        							
+		scramble( pkg.getMainDocumentPart() );        							
         
 	    // Apply map to headers/footers
 		for (Entry<PartName, Part> entry : pkg.getParts().getParts().entrySet()) {
@@ -178,34 +286,36 @@ public class Anonymize {
 			Part p = entry.getValue(); 
 
 			if (p instanceof HeaderPart) {
-	    		toLatin( (HeaderPart)p );        							
+	    		scramble( (HeaderPart)p );        							
 			}
 
 			if (p instanceof FooterPart) {
-	    		toLatin( (FooterPart)p );        							
+	    		scramble( (FooterPart)p );        							
 			}
 			
 		}
         
 	    // endnotes/footnotes
 		if (pkg.getMainDocumentPart().getFootnotesPart()!=null) {
-			toLatin( pkg.getMainDocumentPart().getFootnotesPart() );
+			scramble( pkg.getMainDocumentPart().getFootnotesPart() );
 		}
 		if (pkg.getMainDocumentPart().getEndNotesPart()!=null) {
-			toLatin( pkg.getMainDocumentPart().getEndNotesPart() );
+			scramble( pkg.getMainDocumentPart().getEndNotesPart() );
 		}
 		
 		
         // Comments
 		if (pkg.getMainDocumentPart().getCommentsPart()!=null) {
-			toLatin( pkg.getMainDocumentPart().getCommentsPart() );
+			scramble( pkg.getMainDocumentPart().getCommentsPart() );
 		}
    		
 		return;
 
     }  	
 
-	public void toLatin(JaxbXmlPart p) {
+	public void scramble(JaxbXmlPart p) {
+		
+		log.info("\n\n Scrambling " + p.getPartName().getName());
 		
 		new TraversalUtil(p.getJaxbElement(), latinizer);
 		

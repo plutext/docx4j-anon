@@ -59,7 +59,6 @@ public class ScrambleText extends CallbackImpl {
 	@Override
 	public List<Object> apply(Object o) {
 		
-		
 		if (o instanceof P) {
 			
 			P p = (P)o;
@@ -72,26 +71,7 @@ public class ScrambleText extends CallbackImpl {
 				e.printStackTrace();
 			}
 			
-			String s = out.toString();
-			int slenRqd = s.length();
-			
-			StringBuffer replacement = new StringBuffer();
-			int len = 0;
-			
-			do
-			{
-				// A bit of effort to get enough text
-				
-				int wordsNeeded = Math.round((slenRqd-len)/8) + 1; // always at least one word!
-				String latin = lorem.getWords(wordsNeeded,wordsNeeded);
-				len += latin.length();
-				replacement.append(latin);
-				
-//				System.out.println(len + ", " + slenRqd);
-									
-			} while (len < slenRqd);
-			
-			latinText = replacement.toString();
+			latinText = generateReplacement(out.toString().length());
 			beginIndex = 0;
 			
 		}
@@ -107,6 +87,7 @@ public class ScrambleText extends CallbackImpl {
 			int tLen = t.getValue().length();
 			
 //			t.setValue(latinText.substring(beginIndex, beginIndex+tLen));
+						
 			t.setValue(unicodeRangeToFont(t.getValue(), latinText));
 			
 //			System.out.println(t.getValue());
@@ -115,6 +96,27 @@ public class ScrambleText extends CallbackImpl {
 		}
 		
 		return null;
+	}
+	
+	private String generateReplacement(int slenRqd) {
+		
+		StringBuffer replacement = new StringBuffer();
+		int len = 0;
+		
+		do
+		{
+			// A bit of effort to get enough text
+			
+			int wordsNeeded = Math.round((slenRqd-len)/8) + 1; // always at least one word!
+			String latin = lorem.getWords(wordsNeeded,wordsNeeded);
+			len += latin.length();
+			replacement.append(latin);
+			
+//			System.out.println(len + ", " + slenRqd);
+								
+		} while (len < slenRqd);
+
+		return replacement.toString();
 	}
 	
 	
@@ -152,6 +154,33 @@ public class ScrambleText extends CallbackImpl {
 	
     private String unicodeRangeToFont(String text, String latinText) {
     	
+    	// Check for exceptional case
+    	if (latinText.length()<text.length()) {
+    		
+        	/*
+    			<w:txbxContent>
+    				<w:p >
+    					<w:r><w:t>blah blah </w:t>
+    					</w:r>
+    				</w:p>
+    			</w:txbxContent>
+    			
+    			</v:textbox></v:roundrect></w:pict>
+    			
+    			</mc:Fallback></mc:AlternateContent>
+    			
+    			</w:r>
+
+
+    			<w:r w:rsidR="00CC5C27">
+    				<w:t>zzz</w:t>
+    			</w:r>
+
+        	 * 
+        	 */    		
+    		latinText = generateReplacement(text.length());
+    	}
+    	
     	font = null;
     	
 	    vis.createNew();
@@ -179,7 +208,7 @@ public class ScrambleText extends CallbackImpl {
     	    	
     	    } else {
     		    
-    		    System.out.println(c);    		    
+//    		    System.out.println(c);    		    
 
             	// Need to be able to check glyph exists in the relevant font.
             	// (so that ff it doesn't, we choose another randomly)
@@ -201,7 +230,12 @@ public class ScrambleText extends CallbackImpl {
     		     */
         	    if (c>='\u0041' && c<='\u00FA') // A-Z 
         	    {
-        	    	vis.addCharacterToCurrent( latinText.substring(i, i+1).charAt(0));
+        	    	try {
+        	    		vis.addCharacterToCurrent( latinText.substring(i, i+1).charAt(0));
+        	    	} catch (java.lang.StringIndexOutOfBoundsException e) {
+        	    		System.out.println(latinText +  "( len " + latinText.length() + ") is too short ");
+        	    		throw e;
+        	    	}
         	    	
         	    } else if (c>='\u0061' && c<='\u007A') // a-z 
             	    {
