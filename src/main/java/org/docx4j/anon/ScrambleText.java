@@ -1,16 +1,24 @@
 package org.docx4j.anon;
 
 import java.io.StringWriter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.Map.Entry;
 import java.util.concurrent.ExecutionException;
 
 import org.docx4j.TextUtils;
 import org.docx4j.TraversalUtil.CallbackImpl;
+import org.docx4j.dml.CTRegularTextRun;
 import org.docx4j.fonts.GlyphCheck;
 import org.docx4j.fonts.RunFontSelector;
 import org.docx4j.fonts.RunFontSelector.RunFontActionType;
+import org.docx4j.openpackaging.exceptions.Docx4JException;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
+import org.docx4j.vml.CTTextPath;
+import org.docx4j.wml.CTLanguage;
+import org.docx4j.wml.DelText;
 import org.docx4j.wml.P;
 import org.docx4j.wml.PPr;
 import org.docx4j.wml.R;
@@ -39,6 +47,7 @@ public class ScrambleText extends CallbackImpl {
 		this.pkg = pkg;
 		vis = new RunFontCharVisitorMinimal();
 		rfs = new RunFontSelector(pkg, vis, RunFontActionType.DISCOVERY);
+//		langStats = new HashMap<String, Integer>();
 	}
 	
 	private static Lorem lorem = LoremIpsum.getInstance();
@@ -56,6 +65,15 @@ public class ScrambleText extends CallbackImpl {
 	PPr ppr = null;
 	RPr rpr = null;
 	
+	boolean hasGreek = false;
+	boolean hasCyrillic = false;
+	boolean hasHebrew = false;
+	boolean hasArabic = false;
+	boolean hasHiragana = false;
+	boolean hasKatakana = false;
+	boolean hasCJK = false;
+
+	
 	@Override
 	public List<Object> apply(Object o) {
 		
@@ -70,33 +88,65 @@ public class ScrambleText extends CallbackImpl {
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
-			
+
 			latinText = generateReplacement(out.toString().length());
 			beginIndex = 0;
 			
-		}
-
-		if (o instanceof R) {
-
-			rpr = ((R)o).getRPr();
+			return null;
 		}
 		
 		if (o instanceof Text) {
 			
 			Text t = (Text)o;
 			int tLen = t.getValue().length();
-			
-//			t.setValue(latinText.substring(beginIndex, beginIndex+tLen));
 						
-			t.setValue(unicodeRangeToFont(t.getValue(), latinText));
-			
-//			System.out.println(t.getValue());
+			t.setValue(
+					unicodeRangeToFont(t.getValue(), 
+					latinText.substring(beginIndex, beginIndex+tLen)));
 			
 			beginIndex += tLen;
+			
+		} else if ( o instanceof org.docx4j.wml.DelText) {
+
+			DelText t = (DelText)o;
+			int tLen = t.getValue().length();
+			t.setValue(
+					unicodeRangeToFont(t.getValue(), 
+					latinText.substring(beginIndex, beginIndex+tLen)));
+			beginIndex += tLen;
+			
+		} // org.docx4j.wml.RunIns is handled OK
+		
+		else if (o instanceof org.docx4j.dml.CTRegularTextRun
+				&& ((CTRegularTextRun)o).getT()!=null) {
+			
+			CTRegularTextRun t = (CTRegularTextRun)o;
+			int tLen = t.getT().length();
+			t.setT(
+					unicodeRangeToFont(t.getT(), 
+					latinText.substring(beginIndex, beginIndex+tLen)));
+			beginIndex += tLen;			
+
+		} else if ( o instanceof org.docx4j.vml.CTTextPath) {
+			
+			CTTextPath t = (CTTextPath)o;
+			
+			if (t.getString()!=null) {
+				
+				int tLen = t.getString().length();
+				String tmpLatin = generateReplacement(tLen);
+				t.setString(
+						unicodeRangeToFont(t.getString(), tmpLatin));				
+			}
+			
+			
+		} else {
+//			System.out.println(o.getClass().getName());
 		}
 		
 		return null;
 	}
+	
 	
 	private String generateReplacement(int slenRqd) {
 		
@@ -122,7 +172,7 @@ public class ScrambleText extends CallbackImpl {
 	
 	private static final int MAX_GLYPH_RETRIES = 10;
 	
-	private char getRandom(char rangeLower, char rangeUpper) {
+	private char getRandom(char rangeLower, char rangeUpper)  {
 		
 		boolean glyphOK;
 		int tries = 0;
@@ -145,6 +195,11 @@ public class ScrambleText extends CallbackImpl {
 			
 			tries++;
 		} while (font!=null && !glyphOK && tries<MAX_GLYPH_RETRIES);
+		
+//		if (!glyphOK) {
+//			// This will usually be because there is no physical font present
+//			throw new RuntimeException("Ran out of patience getting glyph in font " + font);
+//		}
     	
 		return result;
 		
@@ -152,7 +207,7 @@ public class ScrambleText extends CallbackImpl {
 
 	String font = null;  // TODO add fontCache
 	
-    private String unicodeRangeToFont(String text, String latinText) {
+    private String unicodeRangeToFont(String text, String latinText)  {
     	
     	// Check for exceptional case
     	if (latinText.length()<text.length()) {
@@ -275,14 +330,17 @@ public class ScrambleText extends CallbackImpl {
 					// Greek and Coptic
 					c = getRandom('\u0370', '\u03FF');
 					vis.addCharacterToCurrent(c);
+					hasGreek = true;
 				} else if (c >= '\u0400' && c <= '\u04FF') {
 					// Cyrillic
 					c = getRandom('\u0400', '\u04FF');
 					vis.addCharacterToCurrent(c);
+					hasCyrillic = true;
 				} else if (c >= '\u0500' && c <= '\u052F') {
 					// Cyrillic Supplement
 					c = getRandom('\u0500', '\u052F');
 					vis.addCharacterToCurrent(c);
+					hasCyrillic = true;
 				} else if (c >= '\u0530' && c <= '\u058F') {
 					// Armenian
 					c = getRandom('\u0530', '\u058F');
@@ -291,10 +349,12 @@ public class ScrambleText extends CallbackImpl {
 					// Hebrew
 					c = getRandom('\u0590', '\u05FF');
 					vis.addCharacterToCurrent(c);
+					hasHebrew = true;
 				} else if (c >= '\u0600' && c <= '\u06FF') {
 					// Arabic
 					c = getRandom('\u0600', '\u06FF');
 					vis.addCharacterToCurrent(c);
+					hasArabic = true;
 				} else if (c >= '\u0700' && c <= '\u074F') {
 					// Syriac
 					c = getRandom('\u0700', '\u074F');
@@ -303,6 +363,7 @@ public class ScrambleText extends CallbackImpl {
 					// Arabic Supplement
 					c = getRandom('\u0750', '\u077F');
 					vis.addCharacterToCurrent(c);
+					hasArabic = true;
 				} else if (c >= '\u0780' && c <= '\u07BF') {
 					// Thaana
 					c = getRandom('\u0780', '\u07BF');
@@ -323,6 +384,7 @@ public class ScrambleText extends CallbackImpl {
 					// Arabic Extended-A
 					c = getRandom('\u08A0', '\u08FF');
 					vis.addCharacterToCurrent(c);
+					hasArabic = true;					
 				} else if (c >= '\u0900' && c <= '\u097F') {
 					// Devanagari
 					c = getRandom('\u0900', '\u097F');
@@ -515,6 +577,7 @@ public class ScrambleText extends CallbackImpl {
 					// Greek Extended
 					c = getRandom('\u1F00', '\u1FFF');
 					vis.addCharacterToCurrent(c);
+					hasGreek = true;
 				} else if (c >= '\u2000' && c <= '\u206F') {
 					// General Punctuation
 					c = getRandom('\u2000', '\u206F');
@@ -639,6 +702,7 @@ public class ScrambleText extends CallbackImpl {
 					// Cyrillic Extended-A
 					c = getRandom('\u2DE0', '\u2DFF');
 					vis.addCharacterToCurrent(c);
+					hasCyrillic = true;
 				} else if (c >= '\u2E00' && c <= '\u2E7F') {
 					// Supplemental Punctuation
 					c = getRandom('\u2E00', '\u2E7F');
@@ -663,10 +727,12 @@ public class ScrambleText extends CallbackImpl {
 					// Hiragana
 					c = getRandom('\u3040', '\u309F');
 					vis.addCharacterToCurrent(c);
+					hasHiragana = true;
 				} else if (c >= '\u30A0' && c <= '\u30FF') {
 					// Katakana
 					c = getRandom('\u30A0', '\u30FF');
 					vis.addCharacterToCurrent(c);
+					hasKatakana = true;
 				} else if (c >= '\u3100' && c <= '\u312F') {
 					// Bopomofo
 					c = getRandom('\u3100', '\u312F');
@@ -711,6 +777,7 @@ public class ScrambleText extends CallbackImpl {
 					// CJK Unified Ideographs
 					c = getRandom('\u4E00', '\u9FFF');
 					vis.addCharacterToCurrent(c);
+					hasCJK = true;
 				} else if (c >= '\uA000' && c <= '\uA48F') {
 					// Yi Syllables
 					c = getRandom('\uA000', '\uA48F');
@@ -851,6 +918,8 @@ public class ScrambleText extends CallbackImpl {
 					// Arabic Presentation Forms-A
 					c = getRandom('\uFB50', '\uFDFF');
 					vis.addCharacterToCurrent(c);
+					hasArabic = true;
+					
 				} else if (c >= '\uFE00' && c <= '\uFE0F') {
 					// Variation Selectors
 					c = getRandom('\uFE00', '\uFE0F');
@@ -875,6 +944,8 @@ public class ScrambleText extends CallbackImpl {
 					// Arabic Presentation Forms-B
 					c = getRandom('\uFE70', '\uFEFF');
 					vis.addCharacterToCurrent(c);
+					hasArabic = true;
+					
 				} else if (c >= '\uFF00' && c <= '\uFFEF') {
 					// Halfwidth and Fullwidth Forms
 					c = getRandom('\uFF00', '\uFFEF');
@@ -1205,7 +1276,7 @@ public class ScrambleText extends CallbackImpl {
     	
     	return (String)vis.getResult();
     }
-	
+
 	
     
 }

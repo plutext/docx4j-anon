@@ -89,33 +89,40 @@ public class Anonymize {
 	 */
 	public AnonymizeResult go() throws Docx4JException {
 		
-		// Identify themeFontLang
-		// TODO: sanity check this against the actual document contents!
-		if (pkg.getMainDocumentPart().getDocumentSettingsPart()!=null
-				&& pkg.getMainDocumentPart().getDocumentSettingsPart().getContents()!=null) {
-			
-				result.themeFontLang = pkg.getMainDocumentPart().getDocumentSettingsPart().getContents().getThemeFontLang();
-		}
-		
-		if (result.themeFontLang==null) {
-			// try defaultRPr
-			RPr defaultRPr = null;
-			if (pkg.getMainDocumentPart().getStyleDefinitionsPart()!=null
-					&& pkg.getMainDocumentPart().getStyleDefinitionsPart().getContents()!=null) {
-				
-				Styles styles = pkg.getMainDocumentPart().getStyleDefinitionsPart().getContents();
-				
-				if (styles.getDocDefaults()!=null) {
-					
-					if (styles.getDocDefaults().getRPrDefault()!=null
-							&& styles.getDocDefaults().getRPrDefault().getRPr()!=null) {
-						
-						result.themeFontLang = styles.getDocDefaults().getRPrDefault().getRPr().getLang(); 
-					}
-				}
-				
-			}
-		}
+//		// Identify themeFontLang
+//		// TODO: sanity check this against the actual document contents!
+//		if (pkg.getMainDocumentPart().getDocumentSettingsPart()!=null
+//				&& pkg.getMainDocumentPart().getDocumentSettingsPart().getContents()!=null) {
+//			
+//				result.themeFontLang = pkg.getMainDocumentPart().getDocumentSettingsPart().getContents().getThemeFontLang();
+//		}
+//		
+//		// try defaultRPr
+//		RPr defaultRPr = null;
+//		if (pkg.getMainDocumentPart().getStyleDefinitionsPart()!=null
+//				&& pkg.getMainDocumentPart().getStyleDefinitionsPart().getContents()!=null) {
+//			
+//			Styles styles = pkg.getMainDocumentPart().getStyleDefinitionsPart().getContents();
+//			
+//			if (styles.getDocDefaults()!=null) {
+//				
+//				if (styles.getDocDefaults().getRPrDefault()!=null
+//						&& styles.getDocDefaults().getRPrDefault().getRPr()!=null) {
+//					
+//					RPr rpr = styles.getDocDefaults().getRPrDefault().getRPr();
+//					
+//					if (rpr.getRtl()!=null) {
+//						result.rtl = rpr.getRtl().isVal();
+//					}
+//	
+//					if (result.themeFontLang==null) {
+//					
+//						result.themeFontLang = rpr.getLang(); 
+//					}
+//				}
+//				
+//			}
+//		}
 		
 		
 		handleMetadata();
@@ -273,43 +280,62 @@ public class Anonymize {
 	
     private void applyScrambleCallbackToParts() 
     		throws InvalidFormatException {
-
-		latinizer = new ScrambleText(pkg);
     	
-    	
-	    // Apply map to MDP                
-		scramble( pkg.getMainDocumentPart() );        							
-        
-	    // Apply map to headers/footers
-		for (Entry<PartName, Part> entry : pkg.getParts().getParts().entrySet()) {
+    	try {
 
-			Part p = entry.getValue(); 
-
-			if (p instanceof HeaderPart) {
-	    		scramble( (HeaderPart)p );        							
+			latinizer = new ScrambleText(pkg);
+	    	
+	    	
+		    // Apply map to MDP                
+			scramble( pkg.getMainDocumentPart() );        							
+	        
+		    // Apply map to headers/footers
+			for (Entry<PartName, Part> entry : pkg.getParts().getParts().entrySet()) {
+	
+				Part p = entry.getValue(); 
+	
+				if (p instanceof HeaderPart) {
+		    		scramble( (HeaderPart)p );        							
+				}
+	
+				if (p instanceof FooterPart) {
+		    		scramble( (FooterPart)p );        							
+				}
+				
 			}
-
-			if (p instanceof FooterPart) {
-	    		scramble( (FooterPart)p );        							
+	        
+		    // endnotes/footnotes
+			if (pkg.getMainDocumentPart().getFootnotesPart()!=null) {
+				scramble( pkg.getMainDocumentPart().getFootnotesPart() );
+			}
+			if (pkg.getMainDocumentPart().getEndNotesPart()!=null) {
+				scramble( pkg.getMainDocumentPart().getEndNotesPart() );
 			}
 			
-		}
-        
-	    // endnotes/footnotes
-		if (pkg.getMainDocumentPart().getFootnotesPart()!=null) {
-			scramble( pkg.getMainDocumentPart().getFootnotesPart() );
-		}
-		if (pkg.getMainDocumentPart().getEndNotesPart()!=null) {
-			scramble( pkg.getMainDocumentPart().getEndNotesPart() );
-		}
+			
+	        // Comments
+			if (pkg.getMainDocumentPart().getCommentsPart()!=null) {
+				scramble( pkg.getMainDocumentPart().getCommentsPart() );
+			}
+	
+			// collected at the package level
+//			result.mostPopularLang = latinizer.langFromLangStats();
+			
+			result.hasGreek = latinizer.hasGreek;
+			result.hasCyrillic = latinizer.hasCyrillic;
+			result.hasHebrew = latinizer.hasHebrew;
+			result.hasArabic = latinizer.hasArabic;
+			result.hasHiragana = latinizer.hasHiragana;
+			result.hasKatakana = latinizer.hasKatakana;
+			result.hasCJK = latinizer.hasCJK;
+
+			
+			return;
 		
-		
-        // Comments
-		if (pkg.getMainDocumentPart().getCommentsPart()!=null) {
-			scramble( pkg.getMainDocumentPart().getCommentsPart() );
-		}
-   		
-		return;
+    	} catch (Exception e) {
+    		e.printStackTrace();
+    		throw new InvalidFormatException(e.getMessage(), e);
+    	}
 
     }  	
 
@@ -318,6 +344,7 @@ public class Anonymize {
 		log.info("\n\n Scrambling " + p.getPartName().getName());
 		
 		new TraversalUtil(p.getJaxbElement(), latinizer);
+		
 		
 	}
     

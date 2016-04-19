@@ -2,23 +2,43 @@ package org.docx4j.anon;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import org.docx4j.openpackaging.parts.Part;
 import org.docx4j.wml.CTLanguage;
 
 public class AnonymizeResult {
+
+	public boolean hasGreek = false;
+	public boolean hasCyrillic = false;
+	public boolean hasHebrew = false;
+	public boolean hasArabic = false;
+	public boolean hasHiragana = false;
+	public boolean hasKatakana = false;
+	public boolean hasCJK = false;
 	
-    // Useful to capture this for analysis purposes
-	CTLanguage themeFontLang = null;	
-	
-	/**
-	 * What language is this docx?
-	 * @return
-	 */
-	public CTLanguage getLang() {
-		return themeFontLang;
-	}
+//    // Useful to capture this for analysis purposes
+//	CTLanguage themeFontLang = null;	
+//	
+//	/**
+//	 * What language is this docx?
+//	 * @return
+//	 */
+//	public CTLanguage getLang() {
+//		return themeFontLang;
+//	}
+//	
+//	String mostPopularLang;
+//	public String getMostPopularLang() {
+//		return mostPopularLang;
+//	}
+//	
+//	boolean rtl = false;
+//
+//	public boolean isRtl() {
+//		return rtl;
+//	}
 
 	/**
 	 * Return parts which are potentially unsafe

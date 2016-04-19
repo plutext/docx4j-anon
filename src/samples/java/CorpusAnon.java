@@ -1,6 +1,7 @@
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.util.Map;
 import java.util.Set;
 import java.util.Map.Entry;
 
@@ -18,13 +19,14 @@ public class CorpusAnon {
 
 	private final static String DIR_IN = System.getProperty("user.dir") + "/corpus/";
 
-	private final static String DIR_OUT = System.getProperty("user.dir") + "/OUT/";
+	private final static String DIR_OUT = System.getProperty("user.dir") + "/OUT6/";
 	
 	private final static String DIR_HANDLED = System.getProperty("user.dir") + "/corpus-handled/";
 	
 	private static final String DIR_OK = "ok";
 	private static final String DIR_LEAKS = "leaks";
 	private static final String DIR_ERRORS = "errors";
+	private static final String DIR_GLYPH = "glyph-issues";
 	
 	private int oks = 0;
 	private int leaks = 0;
@@ -52,6 +54,7 @@ public class CorpusAnon {
 		FileUtils.forceMkdir(new File(DIR_OUT+DIR_OK));
 		FileUtils.forceMkdir(new File(DIR_OUT+DIR_LEAKS));
 		FileUtils.forceMkdir(new File(DIR_OUT+DIR_ERRORS));
+		FileUtils.forceMkdir(new File(DIR_OUT+DIR_GLYPH));
 		
 	}
 
@@ -79,12 +82,17 @@ public class CorpusAnon {
 						handle(f) ;
 
 						FileUtils.moveFile(f, new File(DIR_HANDLED  + f.getName()));
-
 						
-					} catch (Docx4JException e) {
-
+					} catch (Exception e) {
 						
-						if (e.getMessage().startsWith("This file seems to be a binary doc")) {
+						if (e.getMessage()!=null
+							&& e.getMessage().startsWith("Ran out of patience")) {
+							
+							FileUtils.copyFile(f, new File(DIR_OUT+DIR_GLYPH+"/" + f.getName()+".docx"));
+							
+						} else if (e.getMessage()!=null
+								&& e.getMessage().startsWith("This file seems to be a binary doc")) {
+							
 							FileUtils.copyFile(f, new File(DIR_OUT+DIR_ERRORS+"/" + f.getName()+".doc"));
 							
 							// rename the original
@@ -110,6 +118,7 @@ public class CorpusAnon {
     }	
 	
     
+
 	private void handle(File fIn) throws Docx4JException {
 
 		System.out.println("\n\n " + docNum + " Processing " + fIn.getName() + "\n\n");
@@ -127,14 +136,21 @@ public class CorpusAnon {
 		
 
 		
-		String lang = "null";
-		if (result.getLang()!=null
-				&& result.getLang().getVal()!=null
-				&& result.getLang().getVal().length()>=2) {
-			
-			lang = result.getLang().getVal().substring(0, 2); // we want the language only
-			
+		String lang = "default";
+		if (result.hasHiragana || result.hasKatakana) {
+			lang="Japanese";
+		} else if (result.hasArabic) {
+			lang="Arabic";
+		} else if (result.hasHebrew) {
+			lang="Hebrew";
+		} else if (result.hasCyrillic) {
+			lang="Cyrillic";
+		} else if (result.hasGreek) {
+			lang="Greek";
+		} else if (result.hasCJK) {
+			lang = "CJK";
 		}
+		
 		
 		if (result.isOK()) {
 			
