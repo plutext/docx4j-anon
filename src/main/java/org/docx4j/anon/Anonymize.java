@@ -89,41 +89,8 @@ public class Anonymize {
 	 */
 	public AnonymizeResult go() throws Docx4JException {
 		
-//		// Identify themeFontLang
-//		// TODO: sanity check this against the actual document contents!
-//		if (pkg.getMainDocumentPart().getDocumentSettingsPart()!=null
-//				&& pkg.getMainDocumentPart().getDocumentSettingsPart().getContents()!=null) {
-//			
-//				result.themeFontLang = pkg.getMainDocumentPart().getDocumentSettingsPart().getContents().getThemeFontLang();
-//		}
-//		
-//		// try defaultRPr
-//		RPr defaultRPr = null;
-//		if (pkg.getMainDocumentPart().getStyleDefinitionsPart()!=null
-//				&& pkg.getMainDocumentPart().getStyleDefinitionsPart().getContents()!=null) {
-//			
-//			Styles styles = pkg.getMainDocumentPart().getStyleDefinitionsPart().getContents();
-//			
-//			if (styles.getDocDefaults()!=null) {
-//				
-//				if (styles.getDocDefaults().getRPrDefault()!=null
-//						&& styles.getDocDefaults().getRPrDefault().getRPr()!=null) {
-//					
-//					RPr rpr = styles.getDocDefaults().getRPrDefault().getRPr();
-//					
-//					if (rpr.getRtl()!=null) {
-//						result.rtl = rpr.getRtl().isVal();
-//					}
-//	
-//					if (result.themeFontLang==null) {
-//					
-//						result.themeFontLang = rpr.getLang(); 
-//					}
-//				}
-//				
-//			}
-//		}
 		
+		filterMDPRels();
 		
 		handleMetadata();
 		
@@ -146,6 +113,30 @@ public class Anonymize {
 		
 		
 		return result;
+		
+	}
+	
+	/**
+	 * Remove customXml, glossaryDocument, and stylesWithEffects
+	 */
+	private void filterMDPRels() {
+		
+		if (pkg.getMainDocumentPart().getRelationshipsPart()==null) return;
+		
+		if (log.isDebugEnabled()) {
+			for (Relationship r  : pkg.getMainDocumentPart().getRelationshipsPart().getRelationships().getRelationship()) {
+				System.out.println(r.getType());
+			}
+		}
+		
+		pkg.getMainDocumentPart().getRelationshipsPart().removeRelationshipsByType(
+				"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml"); 
+
+		pkg.getMainDocumentPart().getRelationshipsPart().removeRelationshipsByType(
+				"http://schemas.openxmlformats.org/officeDocument/2006/relationships/glossaryDocument"); 
+
+		pkg.getMainDocumentPart().getRelationshipsPart().removeRelationshipsByType(
+				"http://schemas.microsoft.com/office/2007/relationships/stylesWithEffects"); 
 		
 	}
 

@@ -15,6 +15,7 @@ public class PartsAnalyzer {
 	public static HashSet<Part> identifyUnsafeParts(Set<Entry<PartName, Part>> parts) throws Docx4JException {
 		
 		HashSet<Part> unsafeParts = new HashSet<Part>(); 
+		HashSet<Part> unsafeButRemovedParts = new HashSet<Part>(); 
 		
 		
 		for (Entry<PartName, Part> entry : parts) {
@@ -28,16 +29,19 @@ public class PartsAnalyzer {
 				unsafeParts.add(p);
 				
 			} else if ( p instanceof org.docx4j.openpackaging.parts.CustomXmlDataStoragePart
-						|| p instanceof org.docx4j.openpackaging.parts.CustomXmlPart
-						
+						|| p instanceof org.docx4j.openpackaging.parts.opendope.JaxbCustomXmlDataStoragePart						
 						|| p instanceof org.docx4j.openpackaging.parts.opendope.ComponentsPart
 						|| p instanceof org.docx4j.openpackaging.parts.opendope.ConditionsPart
-						|| p instanceof org.docx4j.openpackaging.parts.opendope.JaxbCustomXmlDataStoragePart
 						|| p instanceof org.docx4j.openpackaging.parts.opendope.QuestionsPart
 						|| p instanceof org.docx4j.openpackaging.parts.opendope.StandardisedAnswersPart
 						|| p instanceof org.docx4j.openpackaging.parts.opendope.XPathsPart) {
 
-				unsafeParts.add(p);
+				unsafeButRemovedParts.add(p);
+				
+			} else if (p.getPartName().getName().startsWith("/word/glossary")) {
+
+				// assume
+				unsafeButRemovedParts.add(p);				
 
 			} else if (p instanceof org.docx4j.openpackaging.parts.DocPropsCoverPagePart) {
 				
