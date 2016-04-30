@@ -123,7 +123,7 @@ public class ScrambleText extends CallbackImpl {
 				
 			Text t = (Text)XmlUtils.unwrap(o);	
 			String instr = t.getValue(); 
-			System.out.println(instr);
+			log.debug(instr);
 			
 			if ( instr.contains("MERGEFIELD") ) {
 
@@ -150,6 +150,7 @@ public class ScrambleText extends CallbackImpl {
 				
 				
 			} else if (instr.contains("FORMCHECKBOX")
+					|| instr.contains("FORMTEXT")
 					|| instr.contains("PAGE")) {
 				
 				// leave as is
@@ -165,7 +166,7 @@ public class ScrambleText extends CallbackImpl {
 
 		o = XmlUtils.unwrap(o);		
 		
-		System.out.println(o.getClass().getName());
+//		System.out.println(o.getClass().getName());
 		
 		if (o instanceof SdtElement) {
 			// Remove databinding, tag, if any
@@ -201,22 +202,23 @@ public class ScrambleText extends CallbackImpl {
 			log.debug(t.getValue());
 			int tLen = t.getValue().length();
 			
-			if (false) {
+			if (true) {
 				t.setValue(
 						unicodeRangeToFont(
 								t.getValue(), 
 								latinText.substring(beginIndex, beginIndex+tLen)));
 						
-			} else /* debug */ {
-				
-				String result = unicodeRangeToFont(
-						t.getValue(), 
-						latinText.substring(beginIndex, beginIndex+tLen));
-
-				System.out.println(t.getValue() + " --> " + result); 
-						
-				t.setValue(result);
-			}
+			} 
+//			else /* debug */ {
+//				
+//				String result = unicodeRangeToFont(
+//						t.getValue(), 
+//						latinText.substring(beginIndex, beginIndex+tLen));
+//
+//				System.out.println(t.getValue() + " --> " + result); 
+//						
+//				t.setValue(result);
+//			}
 			
 			beginIndex += tLen;
 			
