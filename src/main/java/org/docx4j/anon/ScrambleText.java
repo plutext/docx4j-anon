@@ -8,7 +8,10 @@ import java.util.Random;
 import java.util.Map.Entry;
 import java.util.concurrent.ExecutionException;
 
+import javax.xml.bind.JAXBElement;
+
 import org.docx4j.TextUtils;
+import org.docx4j.XmlUtils;
 import org.docx4j.TraversalUtil.CallbackImpl;
 import org.docx4j.dml.CTRegularTextRun;
 import org.docx4j.fonts.GlyphCheck;
@@ -23,7 +26,11 @@ import org.docx4j.wml.P;
 import org.docx4j.wml.PPr;
 import org.docx4j.wml.R;
 import org.docx4j.wml.RPr;
+import org.docx4j.wml.SdtBlock;
+import org.docx4j.wml.SdtElement;
+import org.docx4j.wml.SdtPr;
 import org.docx4j.wml.Text;
+import org.jvnet.jaxb2_commons.ppp.Child;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -73,9 +80,100 @@ public class ScrambleText extends CallbackImpl {
 	boolean hasKatakana = false;
 	boolean hasCJK = false;
 
+	@Override
+	public void walkJAXBElements(Object parent) {
+		
+		List children = getChildren(parent);
+		if (children != null) {
+
+			for (Object o2 : children) {
+				
+				Object o = XmlUtils.unwrap(o2);
+				
+				// Need this, for proper SDT processing
+				if (o instanceof Child) {
+					if (parent instanceof SdtBlock) {
+						((Child)o).setParent( ((SdtBlock)parent).getSdtContent() );
+					} else if (parent instanceof List){
+						// Do nothing
+						if (log.isDebugEnabled()) {
+							log.debug("Unknown parent for " + o.getClass().getName());
+						}
+					} else {
+						((Child)o).setParent(parent);
+					}
+				}
+				
+				// Process the wrapped object								
+				this.apply(o2);
+
+				if (this.shouldTraverse(o)) {
+					walkJAXBElements(o);
+				}
+
+			}
+		}
+	}	
 	
 	@Override
 	public List<Object> apply(Object o) {
+		
+		if (o instanceof JAXBElement
+				&& ((JAXBElement)o).getName().getLocalPart().equals("instrText")) {
+				
+			Text t = (Text)XmlUtils.unwrap(o);	
+			String instr = t.getValue(); 
+			System.out.println(instr);
+			
+			if ( instr.contains("MERGEFIELD") ) {
+
+				// eg <w:instrText xml:space="preserve"> MERGEFIELD  Kundenstrasse \* MERGEFORMAT </w:instrText>
+				// or <w:instrText xml:space="preserve"> MERGEFIELD  Kundenstrasse</w:instrText>
+
+				// we'll preseve the MERGEFIELD tag, but change the rest
+				
+				
+				int start = instr.indexOf("MERGEFIELD") + 10;
+				beginIndex += start;					
+				
+				String toProcess = instr.substring(start);
+				
+				System.out.println(toProcess);
+				int tLen = toProcess.length();
+							
+				t.setValue( instr.substring(0, start) +
+						unicodeRangeToFont(
+								toProcess, 
+								latinText.substring(beginIndex, beginIndex+tLen)));
+				
+				beginIndex += tLen;					
+				
+				
+			} else if (instr.contains("FORMCHECKBOX")
+					|| instr.contains("PAGE")) {
+				
+				// leave as is
+				return null;			
+				
+			} else {
+				System.out.println("TO don't scramble: " + instr);
+			}
+			// TODO others
+			
+		}
+
+
+		o = XmlUtils.unwrap(o);		
+		
+		System.out.println(o.getClass().getName());
+		
+		if (o instanceof SdtElement) {
+			// Remove databinding, tag, if any
+			SdtPr sdtPr = ((SdtElement)o).getSdtPr();
+			sdtPr.setDataBinding(null);
+			sdtPr.setTag(null);
+			return null;			
+		}
 		
 		if (o instanceof P) {
 			
@@ -91,18 +189,34 @@ public class ScrambleText extends CallbackImpl {
 
 			latinText = generateReplacement(out.toString().length());
 			beginIndex = 0;
+
+			log.debug("latinText:" + latinText);
 			
 			return null;
 		}
 		
 		if (o instanceof Text) {
-			
-			Text t = (Text)o;
-			int tLen = t.getValue().length();
 						
-			t.setValue(
-					unicodeRangeToFont(t.getValue(), 
-					latinText.substring(beginIndex, beginIndex+tLen)));
+			Text t = (Text)o;
+			log.debug(t.getValue());
+			int tLen = t.getValue().length();
+			
+			if (false) {
+				t.setValue(
+						unicodeRangeToFont(
+								t.getValue(), 
+								latinText.substring(beginIndex, beginIndex+tLen)));
+						
+			} else /* debug */ {
+				
+				String result = unicodeRangeToFont(
+						t.getValue(), 
+						latinText.substring(beginIndex, beginIndex+tLen));
+
+				System.out.println(t.getValue() + " --> " + result); 
+						
+				t.setValue(result);
+			}
 			
 			beginIndex += tLen;
 			
@@ -241,6 +355,7 @@ public class ScrambleText extends CallbackImpl {
 	    vis.createNew();
     	        	    	
     	if (text==null) {
+    		log.warn("text==null; returning...");
     		return null; 
     	}
     	for (int i = 0; i < text.length(); i=text.offsetByCodePoints(i, 1)){
@@ -248,11 +363,11 @@ public class ScrambleText extends CallbackImpl {
     	    char c = text.charAt(i);
     	    
     	    
-//    	    System.out.println(Integer.toHexString(c));
+    	    log.debug(Integer.toHexString(c));
     	    
     	    if (Character.isHighSurrogate(c)) {
 
-    		    log.debug("high");    		    
+    		    log.info("high");
 				vis.addCodePointToCurrent(text.codePointAt(i));
 				        	    	
     	    }
@@ -269,21 +384,27 @@ public class ScrambleText extends CallbackImpl {
             	// (so that ff it doesn't, we choose another randomly)
     	    	// To do this, we need to know which font.  For that, we basically 
     	    	// just test 1 char.
-    	    	if (font==null) {
-        	    	rfs.fontSelector(ppr, rpr, String.valueOf(c));
-        	    	font = vis.getFontname();
-        	    	if (font==null) {
-        	    		log.debug("still no font!");            	    		
-        	    	} 
-        	    }
-    		    
+//    	    	try {
+	    	    	if (font==null) {
+	        	    	rfs.fontSelector(ppr, rpr, String.valueOf(c));
+	        	    	font = vis.getFontname();
+	        	    	if (font==null) {
+	        	    		log.debug("still no font!");            	    		
+	        	    	} 
+	        	    }
+//    	    	} catch (Exception e) {
+//    	    		e.printStackTrace();
+//    	    	}
+
+	    		log.debug("      " + c);    		    
+	    	    	
     		    /* .. Basic Latin
     		     * 
     		     * http://webapp.docx4java.org/OnlineDemo/ecma376/WordML/rFonts.html says 
     		     * @ascii (or @asciiTheme) is used to format all characters in the ASCII range 
     		     * (0 - 127)
     		     */
-        	    if (c>='\u0041' && c<='\u00FA') // A-Z 
+        	    if (c>='\u0041' && c<='\u005A') // A-Z 
         	    {
         	    	try {
         	    		vis.addCharacterToCurrent( latinText.substring(i, i+1).charAt(0));
@@ -293,9 +414,13 @@ public class ScrambleText extends CallbackImpl {
         	    	}
         	    	
         	    } else if (c>='\u0061' && c<='\u007A') // a-z 
-            	    {
-            	    	vis.addCharacterToCurrent( latinText.substring(i, i+1).charAt(0));
-            	    	
+            	{
+        	    	try {
+        	    		vis.addCharacterToCurrent( latinText.substring(i, i+1).charAt(0));        	    			
+        	    	} catch (java.lang.StringIndexOutOfBoundsException e) {
+        	    		System.out.println(latinText +  "( len " + latinText.length() + ") is too short ");
+        	    		throw e;
+        	    	}            	    	
         	    } else if (c>='\u0000' && c<='\u007F') 
             	    {
             	    	vis.addCharacterToCurrent( c );

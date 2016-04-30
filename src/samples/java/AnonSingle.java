@@ -11,7 +11,7 @@ import org.docx4j.openpackaging.exceptions.Docx4JException;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.Part;
 
-public class Example {
+public class AnonSingle {
 
 
 	public static void main(String[] args) throws Docx4JException {
@@ -19,7 +19,7 @@ public class Example {
 		// String inputfilepath = System.getProperty("user.dir") +
 		// "/UN-Declaration.docx";
 		String inputfilepath = System.getProperty("user.dir")
-				+ "/canvas.docx";
+				+ "/IN.docx";
 
 		String outputfilepath = System.getProperty("user.dir")
 				+ "/OUT_Anon.docx";
